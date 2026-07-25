@@ -16,27 +16,27 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { StellarReputationAdapter } from "../src/chains/stellar.ts";
 import { runPublisherTick } from "../src/engine.ts";
 import { FileStore } from "../src/store.ts";
+import { loadPublisherEnv } from "../src/env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 
 function loadConfig() {
-  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "deployments", "v1", "testnet.json"), "utf8"));
-  const verifierId = process.env.REPUTATION_VERIFIER_ID ?? manifest.contracts?.reputationVerifier?.id;
-  if (!verifierId) throw new Error("reputationVerifier not deployed (deployments/v1/testnet.json)");
+  // Validate env before any file/network I/O so a misconfigured deploy fails fast
+  // with a complete report instead of a confusing error mid-tick.
+  const env = loadPublisherEnv();
 
-  const secret = process.env.PUBLISHER_SECRET?.trim() ?? process.env.DEPLOYER_SECRET?.trim();
-  if (!secret) throw new Error("set PUBLISHER_SECRET (current testnet requires the verifier admin key)");
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "deployments", "v1", "testnet.json"), "utf8"));
+  const verifierId = env.verifierId ?? manifest.contracts?.reputationVerifier?.id;
+  if (!verifierId) throw new Error("reputationVerifier not deployed (deployments/v1/testnet.json)");
 
   return {
     verifierId,
-    publisher: Keypair.fromSecret(secret),
-    rpcUrl: process.env.STELLAR_RPC_URL ?? manifest.rpcUrl ?? "https://soroban-testnet.stellar.org",
-    intervalMs: Number(process.env.PUBLISHER_INTERVAL_MS ?? 15000),
-    dataDir: process.env.PUBLISHER_DATA_DIR
-      ? resolve(process.env.PUBLISHER_DATA_DIR)
-      : join(__dirname, "..", "data"),
+    publisher: Keypair.fromSecret(env.secret),
+    rpcUrl: env.rpcUrl ?? manifest.rpcUrl ?? "https://soroban-testnet.stellar.org",
+    intervalMs: env.intervalMs,
+    dataDir: env.dataDir ? resolve(env.dataDir) : join(__dirname, "..", "data"),
   };
 }
 

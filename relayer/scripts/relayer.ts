@@ -10,6 +10,7 @@ import { RelayerHub, attachRelayerEngineToGossip } from "../src/hub.ts";
 import { StellarRelayerChain } from "../src/chains/stellar.ts";
 import { generateX25519Keypair } from "../src/shared/box.ts";
 import { bytesToHex, hexToBytes } from "../src/shared/bytes.ts";
+import { loadRelayerNodeEnv } from "../src/env.ts";
 import testnetManifest from "../../deployments/v1/testnet.json" with { type: "json" };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -33,13 +34,12 @@ function loadDotEnv() {
   }
 }
 
-function required(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Set ${name}`);
-  return value;
-}
-
 loadDotEnv();
+
+// Validate env before any network object (chain adapter, HTTP server, gossip
+// transport) is constructed so a misconfigured deploy fails fast with a complete
+// report instead of a confusing error mid-connection.
+const env = loadRelayerNodeEnv();
 
 const manifest = testnetManifest as {
   rpcUrl: string;
@@ -47,20 +47,20 @@ const manifest = testnetManifest as {
   contracts: { relayerRegistry?: { id?: string | null } };
 };
 
-const operator = Keypair.fromSecret(required("RELAYER_OPERATOR_SECRET"));
-const x25519 = generateX25519Keypair(hexToBytes(required("RELAYER_X25519_SECRET")));
-const registryId = process.env.RELAYER_REGISTRY_ID?.trim() || manifest.contracts.relayerRegistry?.id;
+const operator = Keypair.fromSecret(env.operatorSecret);
+const x25519 = generateX25519Keypair(hexToBytes(env.x25519Secret));
+const registryId = env.registryId ?? manifest.contracts.relayerRegistry?.id;
 if (!registryId) throw new Error("Set RELAYER_REGISTRY_ID or deploy relayerRegistry in the testnet manifest.");
 
-const rpcUrl = process.env.STELLAR_RPC_URL?.trim() || manifest.rpcUrl;
-const endpoint = process.env.RELAYER_ENDPOINT?.trim() || "http://127.0.0.1:8787";
-const minFee = BigInt(process.env.RELAYER_MIN_FEE ?? "100000");
+const rpcUrl = env.rpcUrl ?? manifest.rpcUrl;
+const endpoint = env.endpoint;
+const minFee = env.minFee;
 const endpointPort = new URL(endpoint).port;
-const port = Number(process.env.RELAYER_PORT ?? (endpointPort || 8787));
+const port = env.port ?? Number(endpointPort || 8787);
 
 const chain = new StellarRelayerChain({
   rpcUrl,
-  networkPassphrase: process.env.NETWORK_PASSPHRASE?.trim() || manifest.networkPassphrase,
+  networkPassphrase: env.networkPassphrase ?? manifest.networkPassphrase,
   registryId,
   operator,
 });
@@ -73,7 +73,7 @@ const engine = new RelayerEngine({
   chain,
 });
 
-const hubUrl = process.env.RELAYER_HUB_URL?.trim();
+const hubUrl = env.hubUrl;
 
 if (hubUrl) {
   const transport = new HttpGossipTransport(hubUrl);

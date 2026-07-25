@@ -16,27 +16,29 @@ import { buildProof } from "../src/merkle.ts";
 import { computeDatasetHash } from "../src/publish.ts";
 import { FileStore, normalizeCommitment } from "../src/store.ts";
 import { normalizeHex32 } from "../src/bytes.ts";
+import { loadPublisherEnv } from "../src/env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 
 function loadConfig() {
+  // Validate env before any file/network I/O so a misconfigured deploy fails fast
+  // with a complete report instead of a confusing error mid-request.
+  const env = loadPublisherEnv();
+
   const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "deployments", "v1", "testnet.json"), "utf8"));
-  const verifierId = process.env.REPUTATION_VERIFIER_ID ?? manifest.contracts?.reputationVerifier?.id;
+  const verifierId = env.verifierId ?? manifest.contracts?.reputationVerifier?.id;
   if (!verifierId) throw new Error("reputationVerifier not deployed (deployments/v1/testnet.json)");
-  const secret = process.env.PUBLISHER_SECRET?.trim() ?? process.env.DEPLOYER_SECRET?.trim();
-  if (!secret) throw new Error("set PUBLISHER_SECRET (current testnet requires the verifier admin key)");
+
   return {
     verifierId,
-    publisher: Keypair.fromSecret(secret),
-    rpcUrl: process.env.STELLAR_RPC_URL ?? manifest.rpcUrl ?? "https://soroban-testnet.stellar.org",
-    dataDir: process.env.PUBLISHER_DATA_DIR
-      ? resolve(process.env.PUBLISHER_DATA_DIR)
-      : join(__dirname, "..", "data"),
-    host: process.env.PUBLISHER_HTTP_HOST ?? "127.0.0.1",
-    port: Number(process.env.PUBLISHER_HTTP_PORT ?? 8790),
-    corsOrigin: process.env.PUBLISHER_CORS_ORIGIN ?? "*",
+    publisher: Keypair.fromSecret(env.secret),
+    rpcUrl: env.rpcUrl ?? manifest.rpcUrl ?? "https://soroban-testnet.stellar.org",
+    dataDir: env.dataDir ? resolve(env.dataDir) : join(__dirname, "..", "data"),
+    host: env.httpHost,
+    port: env.httpPort,
+    corsOrigin: env.corsOrigin,
   };
 }
 

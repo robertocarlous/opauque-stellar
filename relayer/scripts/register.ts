@@ -26,6 +26,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { generateX25519Keypair } from "../src/shared/box.ts";
 import { bytesToHex, hexToBytes } from "../src/shared/bytes.ts";
+import { loadRelayerRegisterEnv } from "../src/env.ts";
 import testnetManifest from "../../deployments/v1/testnet.json" with { type: "json" };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,12 +49,6 @@ function loadDotEnv() {
     }
     process.env[key] = value;
   }
-}
-
-function required(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Set ${name}`);
-  return value;
 }
 
 function bytesScVal(bytes: Uint8Array): xdr.ScVal {
@@ -108,21 +103,25 @@ async function invoke(
 
 loadDotEnv();
 
+// Validate env before any RPC server object is constructed so a misconfigured
+// deploy fails fast with a complete report instead of a confusing error mid-call.
+const env = loadRelayerRegisterEnv();
+
 const manifest = testnetManifest as {
   rpcUrl: string;
   networkPassphrase: string;
   contracts: { relayerRegistry?: { id?: string | null } };
   wiring?: { relayerRegistry?: { minimumStake?: number | string } };
 };
-const registryId = process.env.RELAYER_REGISTRY_ID?.trim() || manifest.contracts.relayerRegistry?.id;
+const registryId = env.registryId ?? manifest.contracts.relayerRegistry?.id;
 if (!registryId) throw new Error("Set RELAYER_REGISTRY_ID or deploy relayerRegistry in the testnet manifest.");
 
-const operator = Keypair.fromSecret(required("RELAYER_OPERATOR_SECRET"));
-const x25519 = generateX25519Keypair(hexToBytes(required("RELAYER_X25519_SECRET")));
-const endpoint = process.env.RELAYER_ENDPOINT?.trim() || "http://127.0.0.1:8787";
-const stake = BigInt(process.env.RELAYER_STAKE ?? manifest.wiring?.relayerRegistry?.minimumStake ?? 1_000_000);
-const rpcUrl = process.env.STELLAR_RPC_URL?.trim() || manifest.rpcUrl;
-const networkPassphrase = process.env.NETWORK_PASSPHRASE?.trim() || manifest.networkPassphrase;
+const operator = Keypair.fromSecret(env.operatorSecret);
+const x25519 = generateX25519Keypair(hexToBytes(env.x25519Secret));
+const endpoint = env.endpoint;
+const stake = env.stake ?? BigInt(manifest.wiring?.relayerRegistry?.minimumStake ?? 1_000_000);
+const rpcUrl = env.rpcUrl ?? manifest.rpcUrl;
+const networkPassphrase = env.networkPassphrase ?? manifest.networkPassphrase;
 const server = new rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") });
 
 const operatorAddress = operator.publicKey();

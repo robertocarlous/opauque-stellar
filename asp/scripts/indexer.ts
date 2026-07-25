@@ -16,12 +16,17 @@ import { StellarChainAdapter } from "../src/chains/stellar.ts";
 import { FileStore } from "../src/store.ts";
 import { approveAll } from "../src/policy.ts";
 import { runPoolTick } from "../src/engine.ts";
+import { loadAspEnv } from "../src/env.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 
 function loadConfig() {
+  // Validate env before any file/network I/O so a misconfigured deploy fails fast
+  // with a complete report instead of a confusing error mid-tick.
+  const env = loadAspEnv();
+
   const manifest = JSON.parse(
     readFileSync(join(REPO_ROOT, "deployments", "v1", "testnet.json"), "utf8"),
   );
@@ -29,17 +34,14 @@ function loadConfig() {
   const scope = manifest.wiring?.privacyPool?.scope ?? 1;
   if (!poolId) throw new Error("privacyPool not deployed (deployments/v1/testnet.json)");
 
-  const secret = process.env.ASP_SECRET?.trim();
-  if (!secret) throw new Error("set ASP_SECRET (the ASP authority S... seed)");
-
   return {
     poolId,
     scope,
-    authority: Keypair.fromSecret(secret),
-    rpcUrl: process.env.STELLAR_RPC_URL ?? manifest.rpcUrl ?? "https://soroban-testnet.stellar.org",
+    authority: Keypair.fromSecret(env.secret),
+    rpcUrl: env.rpcUrl ?? manifest.rpcUrl ?? "https://soroban-testnet.stellar.org",
     deploymentLedger: manifest.deploymentLedger ?? undefined,
-    intervalMs: Number(process.env.ASP_INTERVAL_MS ?? 15000),
-    confirmations: Number(process.env.ASP_CONFIRMATIONS ?? 1),
+    intervalMs: env.intervalMs,
+    confirmations: env.confirmations,
     dataDir: join(__dirname, "..", "data"),
   };
 }
