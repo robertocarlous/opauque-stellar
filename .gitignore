@@ -8,6 +8,10 @@ test-ledger/
 # Soroban / Stellar CLI local cache (when present)
 .stellar/
 
+# Local devnet runtime state (npm run devnet): ephemeral manifest, service PIDs,
+# logs, and data dirs. Regenerated on every `npm run devnet`.
+.devnet/
+
 # Secrets at repo root (do not use `.env*` — would ignore `.env.example`)
 .env
 .env.local

@@ -6,7 +6,9 @@
  *
  * Config (env / .env): STELLAR_RPC_URL, ASP_SECRET (S... authority seed), ASP_INTERVAL_MS,
  * ASP_CONFIRMATIONS, optional IPFS_API_URL. Pool id + scope are resolved from
- * deployments/v1/testnet.json. Never run in CI (it sends live transactions).
+ * deployments/v1/testnet.json, or from ASP_MANIFEST_PATH when set (used by the
+ * local devnet to point at its ephemeral .devnet/manifest.json). Never run against
+ * testnet/mainnet in CI (it sends live transactions).
  */
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,9 +24,12 @@ const REPO_ROOT = resolve(__dirname, "..", "..");
 const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
 
 function loadConfig() {
-  const manifest = JSON.parse(
-    readFileSync(join(REPO_ROOT, "deployments", "v1", "testnet.json"), "utf8"),
-  );
+  // ASP_MANIFEST_PATH lets the local devnet (npm run devnet) point the indexer at
+  // its ephemeral .devnet/manifest.json instead of the canonical testnet manifest.
+  const manifestPath = process.env.ASP_MANIFEST_PATH?.trim()
+    ? resolve(process.env.ASP_MANIFEST_PATH.trim())
+    : join(REPO_ROOT, "deployments", "v1", "testnet.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const poolId = manifest.contracts?.privacyPool?.id;
   const scope = manifest.wiring?.privacyPool?.scope ?? 1;
   if (!poolId) throw new Error("privacyPool not deployed (deployments/v1/testnet.json)");

@@ -6,8 +6,13 @@
  * resulting contract IDs / WASM hashes / ledger into the canonical manifest at
  * `deployments/v1/<network>.json`, and leaves it in a strict-verifiable state.
  *
+ * `--network local` targets the `stellar container start local` sandbox instead
+ * (see `npm run devnet`). Its manifest is ephemeral — written to
+ * `.devnet/manifest.json`, not `deployments/`, since local contract IDs are
+ * regenerated on every devnet run and are never a source of truth.
+ *
  * Configuration (via root `.env` — see `.env.example`):
- *   STELLAR_NETWORK           testnet | mainnet            (or --network <net>)
+ *   STELLAR_NETWORK           testnet | mainnet | local     (or --network <net>)
  *   STELLAR_DEPLOYER          stellar-cli identity name    (preferred)
  *   STELLAR_DEPLOYER_SECRET   raw secret seed (S...)       (alternative)
  *   STELLAR_DEPLOYER_ADDRESS  G... address for the record  (optional)
@@ -19,7 +24,7 @@
  *   node scripts/deploy-contracts.mjs --network testnet --skip-build
  *
  * Flags:
- *   --network <testnet|mainnet>   target network (default: $STELLAR_NETWORK or testnet)
+ *   --network <testnet|mainnet|local>   target network (default: $STELLAR_NETWORK or testnet)
  *   --dry-run                     build + plan only; do not deploy or write IDs
  *   --skip-build                  reuse existing target/ WASM (skip `stellar contract build`)
  *   --force                       bypass the mainnet audit-signoff gate (NOT recommended)
@@ -29,7 +34,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,6 +92,45 @@ const POOL_SCOPE = 1;
 const RELAYER_MINIMUM_STAKE = 1_000_000; // 0.1 XLM.
 const RELAYER_UNSTAKE_COOLDOWN = 720; // ~1 hour at 5s ledgers.
 const RELAYER_MAX_DEADLINE = 17_280; // ~1 day at 5s ledgers.
+
+/**
+ * Fresh, not-yet-deployed manifest for the `local` devnet network. Mirrors the
+ * `deployments/v1/mainnet.json` template shape so the rest of this script (which
+ * mutates `manifest.contracts[key]` in place) works unmodified against it.
+ */
+function localManifestTemplate() {
+  return {
+    schemaVersion: "1.0.0",
+    release: "v1",
+    network: "local",
+    networkPassphrase: "Standalone Network ; February 2017",
+    rpcUrl: "http://localhost:8000/rpc",
+    horizonUrl: "http://localhost:8000",
+    deploymentLedger: null,
+    deployedAt: null,
+    deployer: null,
+    admin: null,
+    multisig: null,
+    wiring: null,
+    deploymentStatus: "not_deployed",
+    contracts: {
+      stealthRegistry: { id: "", wasmHash: "", package: "stealth-registry" },
+      stealthAnnouncer: { id: "", wasmHash: "", package: "stealth-announcer" },
+      groth16Verifier: { id: "", wasmHash: "", package: "groth16-verifier" },
+      reputationVerifier: { id: "", wasmHash: "", package: "reputation-verifier" },
+      schemaRegistry: { id: "", wasmHash: "", package: "schema-registry" },
+      attestationEngineV2: { id: "", wasmHash: "", package: "attestation-engine-v2" },
+      poolVerifier: { id: null, wasmHash: null, package: "groth16-verifier" },
+      privacyPool: { id: null, wasmHash: null, package: "privacy-pool" },
+      relayerRegistry: { id: null, wasmHash: null, package: "relayer-registry" },
+    },
+    artifacts: {
+      frontend: { buildCommit: null },
+      circuits: {},
+    },
+    verification: { command: "", output: null },
+  };
+}
 
 function flag(name) {
   return process.argv.includes(`--${name}`);
@@ -247,9 +291,11 @@ async function deployPrivacyPool({ network, source, deployerAddress, manifest, m
 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`\n✓ Updated ${manifestPath} (poolVerifier + privacyPool)`);
-  console.log(
-    `\nNext: npm run verify:deployment:strict -- --network ${network} --check-wasm\n`,
-  );
+  if (network !== "local") {
+    console.log(
+      `\nNext: npm run verify:deployment:strict -- --network ${network} --check-wasm\n`,
+    );
+  }
 }
 
 /**
@@ -327,9 +373,11 @@ async function deployRelayerRegistry({ network, source, deployerAddress, manifes
 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`\n✓ Updated ${manifestPath} (relayerRegistry)`);
-  console.log(
-    `\nNext: npm run verify:deployment:strict -- --network ${network} --check-wasm\n`,
-  );
+  if (network !== "local") {
+    console.log(
+      `\nNext: npm run verify:deployment:strict -- --network ${network} --check-wasm\n`,
+    );
+  }
 }
 
 async function main() {
@@ -338,9 +386,10 @@ async function main() {
   const skipBuild = flag("skip-build");
   const force = flag("force");
 
-  if (network !== "testnet" && network !== "mainnet") {
-    fail(`Unsupported network "${network}". Use testnet or mainnet.`);
+  if (network !== "testnet" && network !== "mainnet" && network !== "local") {
+    fail(`Unsupported network "${network}". Use testnet, mainnet, or local.`);
   }
+  const isLocal = network === "local";
 
   // Identity: prefer a configured stellar-cli identity name, fall back to a raw secret.
   const identity = process.env.STELLAR_DEPLOYER?.trim();
@@ -365,9 +414,17 @@ async function main() {
     }
   }
 
-  const manifestPath = join(ROOT, "deployments", "v1", `${network}.json`);
-  if (!existsSync(manifestPath)) fail(`Missing manifest: ${manifestPath}`);
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  // Local devnet manifests are ephemeral (regenerated on every `npm run devnet`)
+  // and never a source of truth, so they live outside `deployments/` and are
+  // bootstrapped on the fly instead of required to pre-exist.
+  const manifestPath = isLocal
+    ? join(ROOT, ".devnet", "manifest.json")
+    : join(ROOT, "deployments", "v1", `${network}.json`);
+  if (!isLocal && !existsSync(manifestPath)) fail(`Missing manifest: ${manifestPath}`);
+  if (isLocal) mkdirSync(dirname(manifestPath), { recursive: true });
+  const manifest = existsSync(manifestPath)
+    ? JSON.parse(readFileSync(manifestPath, "utf8"))
+    : localManifestTemplate();
 
   console.log(`\nOpaque Stellar deploy → ${network}${dryRun ? " (dry run)" : ""}\n`);
 
@@ -517,17 +574,21 @@ async function main() {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`\n✓ Updated ${manifestPath}`);
 
-  console.log(
-    [
-      "\nDeployed + initialized all 6 contracts; wiring recorded in the manifest.",
-      "Next steps:",
-      `  1. Verify:  npm run verify:deployment:strict -- --network ${network} --check-wasm`,
-      `  2. Point the frontend at the new IDs (they are read from the manifest automatically),`,
-      `     or set VITE_${network.toUpperCase()}_*_CONTRACT overrides for local dev.`,
-      "  3. Commit the updated manifest.",
-      "",
-    ].join("\n"),
-  );
+  if (network === "local") {
+    console.log("\nDeployed + initialized all 6 contracts; wiring recorded in .devnet/manifest.json.\n");
+  } else {
+    console.log(
+      [
+        "\nDeployed + initialized all 6 contracts; wiring recorded in the manifest.",
+        "Next steps:",
+        `  1. Verify:  npm run verify:deployment:strict -- --network ${network} --check-wasm`,
+        `  2. Point the frontend at the new IDs (they are read from the manifest automatically),`,
+        `     or set VITE_${network.toUpperCase()}_*_CONTRACT overrides for local dev.`,
+        "  3. Commit the updated manifest.",
+        "",
+      ].join("\n"),
+    );
+  }
 }
 
 main().catch((err) => fail(err?.message ?? String(err)));
