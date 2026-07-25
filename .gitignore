@@ -8,6 +8,10 @@ test-ledger/
 # Soroban / Stellar CLI local cache (when present)
 .stellar/
 
+# Generated release checksums/signatures (npm run release:checksums). Regenerated
+# per release and uploaded as GitHub release assets, never committed.
+artifacts/releases/
+
 # Secrets at repo root (do not use `.env*` — would ignore `.env.example`)
 .env
 .env.local

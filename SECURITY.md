@@ -26,6 +26,64 @@ The reference wallet also surfaces an in-app summary at `/abuse-policy` (see `fr
 
 Security fixes are applied to the latest code on the `main` branch. When we tag a release, notes appear on the [GitHub Releases](https://github.com/collinsadi/opauque-stellar/releases) page.
 
+## Release artifact signing
+
+In-repo builds verify release artifacts (circuit `zkey`/witness WASM, scanner WASM) by
+SHA-256 hash pinned in [`artifacts/manifest.json`](artifacts/manifest.json). That covers
+consumers who go through this repo's own tooling (`npm run fetch:circuits`,
+`verify-artifact-manifest.ts`), but says nothing to someone who downloads a release
+asset directly from the GitHub Releases page and has no reason to trust this repo's
+current state.
+
+To close that gap, every checksums file we publish alongside a release's binary assets
+is signed with a maintainer PGP/GPG key, so authorship can be verified independently of
+GitHub and of this repository.
+
+**Signing key fingerprint:**
+
+```
+⚠️  NOT YET ACTIVE — no release has been signed with a real key yet.
+    <maintainer: replace this block with your real fingerprint and delete
+    this warning once the key exists and the first signed release is cut>
+
+XXXX XXXX XXXX XXXX XXXX  XXXX XXXX XXXX XXXX XXXX
+```
+
+The corresponding public key is attached to each signed release (`release-signing-key.asc`)
+and, once generated, will also be mirrored in this repository. Maintainers: see
+`scripts/sign-release-checksums.ts` and [`.github/CONTRIBUTING.md` §8](.github/CONTRIBUTING.md)
+for how to generate the key and sign a release's checksums.
+
+### Verifying a release (exact commands)
+
+Replace `<tag>` with the release tag (for example `v1-circuit-artifacts`, the current
+circuit-artifacts release — see [`artifacts/README.md`](artifacts/README.md)).
+
+```bash
+# 1. Import the maintainer's public signing key (one-time; skip if already imported)
+curl -fsSL https://github.com/collinsadi/opauque-stellar/releases/download/<tag>/release-signing-key.asc \
+  | gpg --import
+
+# 2. Confirm the imported key's fingerprint matches the one published above —
+#    this is the step that actually establishes trust, not step 1 or 3.
+gpg --fingerprint <key-id-or-email>
+
+# 3. Download the checksums file and its detached signature from the release
+curl -fsSLO https://github.com/collinsadi/opauque-stellar/releases/download/<tag>/SHA256SUMS
+curl -fsSLO https://github.com/collinsadi/opauque-stellar/releases/download/<tag>/SHA256SUMS.asc
+
+# 4. Verify the signature is authentic
+gpg --verify SHA256SUMS.asc SHA256SUMS
+
+# 5. Verify each downloaded release asset's hash matches
+sha256sum -c SHA256SUMS
+#   macOS (no sha256sum by default): shasum -a 256 -c SHA256SUMS
+```
+
+A "Good signature" from step 4 only means the checksums file was signed by whatever key
+you imported — it is step 2, comparing the fingerprint against the one published in this
+document, that confirms the key actually belongs to an Opaque maintainer.
+
 ## Scope
 
 - Soroban contracts in `contracts/`

@@ -55,6 +55,18 @@ Expected files (see `manifest.json` → `releaseAssets.files`):
 - `stealth_reputation_final.zkey` → `frontend/public/circuits/v2/stealth_reputation_final.zkey`
 - `stealth_reputation.wasm` → `frontend/public/circuits/v2/stealth_reputation.wasm`
 
+## Verifying release signatures
+
+`npm run fetch:circuits` already checks each download against the pinned hash in
+`manifest.json`, which is enough if you trust this repo's current state. If you
+downloaded a release asset directly from the GitHub Releases page and want to verify
+authorship independently of the repo, every release publishes a `SHA256SUMS` file
+signed with a maintainer GPG key alongside the binaries. See
+[`SECURITY.md`](../SECURITY.md) → **Release artifact signing** for the published key
+fingerprint and the exact `gpg`/`sha256sum` verification commands. Maintainers: see
+[`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md) §8a for how to generate the key
+and sign a release.
+
 ## Contract VK ↔ zkey binding
 
 Each circuit entry records:

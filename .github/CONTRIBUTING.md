@@ -291,6 +291,45 @@ npm run deploy:testnet -- --dry-run # preview (no broadcast)
   npx tsx scripts/verify-deployment-manifest.ts --network <net> --strict --check-wasm
   ```
 
+### 8a. Signing release checksums
+
+Every GitHub release's binary assets (circuit `zkey`/witness WASM today — see
+[`artifacts/README.md`](../artifacts/README.md)) ship with a `SHA256SUMS` file signed by
+a maintainer key, so out-of-band downloaders can verify authorship without trusting this
+repo's state (see [`SECURITY.md`](../SECURITY.md) → Release artifact signing for the
+consumer-facing verification steps and the published fingerprint).
+
+**One-time: generate the maintainer signing key** (skip if you already have one):
+
+```bash
+gpg --full-generate-key            # RSA 4096, no expiry shorter than the project's lifetime
+gpg --fingerprint <key-id-or-email> # copy this into SECURITY.md → Release artifact signing
+gpg --export --armor <key-id-or-email> > release-signing-key.asc
+```
+
+Publish `release-signing-key.asc` as an asset on every signed release, and update the
+fingerprint in `SECURITY.md` once (it does not change per release).
+
+**Per release: generate and sign the checksums file**, after `artifacts/manifest.json` is
+up to date (`npm run update:artifacts`) and the release binaries are built:
+
+```bash
+# Generate artifacts/releases/<tag>/SHA256SUMS from the pinned manifest hashes,
+# verifying against any matching local files as a sanity check.
+npm run release:checksums
+
+# Sign it (uses gpg under the hood):
+RELEASE_SIGNING_KEY_ID=<your-key-id> npm run release:checksums -- --sign
+
+# Upload the binaries, SHA256SUMS, SHA256SUMS.asc, and release-signing-key.asc
+# together as assets on the release tag:
+gh release upload <tag> artifacts/releases/<tag>/SHA256SUMS \
+  artifacts/releases/<tag>/SHA256SUMS.asc release-signing-key.asc
+```
+
+`artifacts/releases/` is gitignored — it is regenerated per release and only ever lives
+in the uploaded GitHub release assets, never in the repo.
+
 ---
 
 ## 9. Pull request process

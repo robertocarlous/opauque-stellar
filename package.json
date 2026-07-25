@@ -18,6 +18,7 @@
     "test:circuits": "npm --prefix circuits run test:regression --",
     "soak": "tsx scripts/soak-test.ts",
     "soak:short": "SOAK_DURATION=5m tsx scripts/soak-test.ts",
+    "release:checksums": "tsx scripts/sign-release-checksums.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
